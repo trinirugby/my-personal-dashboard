@@ -3,17 +3,22 @@
 import { useState, useTransition, useEffect } from "react";
 import { toast } from "sonner";
 import { updateInvoiceAction } from "@/app/actions";
-import type { Invoice } from "@/lib/airtable";
+import type { Invoice, Project } from "@/lib/airtable";
 
 const inputCls =
   "w-full bg-[#0b0d10] border border-[#2a2e34] rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors";
 const selectCls = inputCls + " cursor-pointer";
 
+type InvoiceTypeValue = "deposit" | "milestone" | "final" | "recurring" | "one_off";
+type InvoiceStatusValue = "Draft" | "Sent" | "Paid" | "Overdue" | "Void";
+
 export function EditInvoiceModal({
   invoice,
+  projects = [],
   onClose,
 }: {
   invoice: Invoice;
+  projects?: Project[];
   onClose: () => void;
 }) {
   const [pending, start] = useTransition();
@@ -31,17 +36,21 @@ export function EditInvoiceModal({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const amount = fd.get("amount") as string;
+    const projectId = (fd.get("projectId") as string) || "";
+    const invoiceType = (fd.get("invoiceType") as string) || "";
+    const status = (fd.get("status") as string) || "";
     setError(false);
     start(async () => {
       try {
         await updateInvoiceAction(invoice.id, {
           "Invoice Number": (fd.get("invoiceNumber") as string) || undefined,
           Amount: amount ? parseFloat(amount) : undefined,
-          "Invoice Type": (fd.get("invoiceType") as string) || undefined,
-          Status: (fd.get("status") as string) || undefined,
+          "Invoice Type": invoiceType ? (invoiceType as InvoiceTypeValue) : undefined,
+          Status: status ? (status as InvoiceStatusValue) : undefined,
           "Issue Date": (fd.get("issueDate") as string) || undefined,
           "Due Date": (fd.get("dueDate") as string) || undefined,
           Notes: (fd.get("notes") as string) || undefined,
+          Project: projectId ? [projectId] : undefined,
         });
         toast.success("Invoice saved");
         onClose();
@@ -68,6 +77,19 @@ export function EditInvoiceModal({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {projects.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-zinc-400">Project</label>
+              <select name="projectId" defaultValue={invoice.Project?.[0] ?? ""} className={selectCls}>
+                <option value="">— None</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.Name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-zinc-400">Invoice Number</label>

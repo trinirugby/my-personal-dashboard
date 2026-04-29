@@ -21,20 +21,26 @@ function Donut({ data, label }: { data: { name: string; value: number }[]; label
   const stroke = 14;
   const circumference = 2 * Math.PI * radius;
 
-  let offset = 0;
-  const segments = data.map((d) => {
-    const pct = total === 0 ? 0 : d.value / total;
-    const length = pct * circumference;
-    const seg = {
-      ...d,
-      length,
-      offset,
-      color: TYPE_COLORS[d.name] ?? "#3a3f47",
-      pct,
-    };
-    offset += length;
-    return seg;
-  });
+  const segments = data.reduce<{
+    items: Array<{ name: string; value: number; length: number; offset: number; color: string; pct: number }>;
+    cursor: number;
+  }>(
+    (acc, d) => {
+      const pct = total === 0 ? 0 : d.value / total;
+      const length = pct * circumference;
+      acc.items.push({
+        name: d.name,
+        value: d.value,
+        length,
+        offset: acc.cursor,
+        color: TYPE_COLORS[d.name] ?? "#3a3f47",
+        pct,
+      });
+      acc.cursor += length;
+      return acc;
+    },
+    { items: [], cursor: 0 },
+  ).items;
 
   return (
     <div className="flex flex-col items-center gap-2 flex-1">

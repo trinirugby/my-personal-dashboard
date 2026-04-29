@@ -25,7 +25,7 @@ type Row = {
 export function TopClients({ clients, invoices, projects, selectedClientId, onSelectClient }: Props) {
   const [range, setRange] = useState<Range>("YTD");
 
-  const { rows, totalRevenue, concentrationWarn } = useMemo(() => {
+  const { rows, concentrationWarn } = useMemo(() => {
     const ytdStart = startOfYear(new Date());
 
     const projectToClient = new Map<string, string | undefined>();
@@ -69,7 +69,7 @@ export function TopClients({ clients, invoices, projects, selectedClientId, onSe
 
     const concentrationWarn = rows.some((r) => r.pct > 40);
 
-    return { rows, totalRevenue, concentrationWarn };
+    return { rows, concentrationWarn };
   }, [clients, invoices, projects, range]);
 
   return (

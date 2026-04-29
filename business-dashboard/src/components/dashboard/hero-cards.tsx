@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { format, startOfMonth, endOfMonth, parseISO, isBefore, isAfter, startOfYear, subMonths } from "date-fns";
 import { useCountUp } from "@/hooks/use-count-up";
+import { isOverdue } from "@/lib/invoices";
 import type { Invoice, Expense } from "@/lib/airtable";
 
 const YTD_GOAL = 55000;
@@ -43,9 +44,8 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export function HeroCards({ invoices, expenses }: Props) {
-  const now = new Date();
-
   const stats = useMemo(() => {
+    const now = new Date();
     const thisMonthStart = startOfMonth(now);
     const thisMonthEnd = endOfMonth(now);
     const lastMonthStart = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
@@ -74,8 +74,8 @@ export function HeroCards({ invoices, expenses }: Props) {
     const pctChange = netLast === 0 ? null : Math.round(((netThis - netLast) / Math.abs(netLast)) * 100);
 
     const outstanding = invoices.filter(i => i.Status === "Sent" || i.Status === "Overdue");
-    const overdue = outstanding.filter(i => i.Status === "Overdue");
-    const sent = outstanding.filter(i => i.Status === "Sent");
+    const overdue = outstanding.filter(i => isOverdue(i, now));
+    const sent = outstanding.filter(i => !isOverdue(i, now));
 
     const ytdRevenue = invoices
       .filter(i => i.Status === "Paid" && inRange(i["Paid Date"], ytdStart, now))
@@ -90,11 +90,11 @@ export function HeroCards({ invoices, expenses }: Props) {
       return rev - exp;
     });
 
-    return { revThis, expThis, netThis, pctChange, outstanding, overdue, sent, ytdRevenue, sparkData };
+    return { revThis, expThis, netThis, pctChange, outstanding, overdue, sent, ytdRevenue, sparkData, monthName: format(now, "MMMM") };
   }, [invoices, expenses]);
 
   const ytdPct = Math.min(100, Math.round((stats.ytdRevenue / YTD_GOAL) * 100));
-  const monthName = format(now, "MMMM");
+  const monthName = stats.monthName;
 
   const animatedNet = useCountUp(stats.netThis);
   const animatedComingIn = useCountUp(

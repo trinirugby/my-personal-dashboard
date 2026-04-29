@@ -48,7 +48,7 @@ export function DashboardShell({ clients, projects, invoices, expenses }: Props)
           <p className="text-xl font-bold text-[#f5f5f5]">MindeloAI Dashboard</p>
           <p className="text-xs text-zinc-500 mt-0.5">{today}</p>
         </div>
-        <QuickActions />
+        <QuickActions clients={clients} projects={projects} />
       </div>
 
       {/* Row 1: Hero cards */}
@@ -65,7 +65,7 @@ export function DashboardShell({ clients, projects, invoices, expenses }: Props)
       </div>
 
       {/* Row 3: Project board */}
-      <ProjectBoard projects={projects} />
+      <ProjectBoard projects={projects} clients={clients} />
 
       {/* Row 4: Invoices + cashflow + top clients */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -81,7 +81,7 @@ export function DashboardShell({ clients, projects, invoices, expenses }: Props)
           />
         </div>
         <div className="grid grid-cols-1 gap-3">
-          <Cashflow invoices={invoices} />
+          <Cashflow invoices={invoices} projects={projects} />
           <TopClients
             clients={clients}
             invoices={invoices}

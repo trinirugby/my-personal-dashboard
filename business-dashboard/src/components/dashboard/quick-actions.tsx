@@ -1,22 +1,35 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { createInvoiceAction, createExpenseAction, createProjectAction } from "@/app/actions";
+import {
+  createInvoiceAction,
+  createExpenseAction,
+  createProjectAction,
+} from "@/app/actions";
+import type { Client, Project } from "@/lib/airtable";
 
-type Modal = "invoice" | "expense" | "project" | null;
+type ModalKind = "invoice" | "expense" | "project" | null;
 
-function Modal({ title, accent, onClose, children }: {
+type Props = {
+  clients?: Client[];
+  projects?: Project[];
+};
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
   title: string;
-  accent: string;
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -24,13 +37,20 @@ function Modal({ title, accent, onClose, children }: {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
     >
-      <div ref={ref} className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6 w-full max-w-md shadow-2xl">
+      <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <p className="text-sm font-semibold text-white">{title}</p>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors text-lg leading-none">✕</button>
+          <button
+            onClick={onClose}
+            className="text-zinc-500 hover:text-white transition-colors text-lg leading-none"
+          >
+            ✕
+          </button>
         </div>
         {children}
       </div>
@@ -47,13 +67,26 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const inputCls = "w-full bg-[#0b0d10] border border-[#2a2e34] rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors";
+const inputCls =
+  "w-full bg-[#0b0d10] border border-[#2a2e34] rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors";
 const selectCls = inputCls + " cursor-pointer";
 
-function SubmitRow({ pending, onClose, accent }: { pending: boolean; onClose: () => void; accent: string }) {
+function SubmitRow({
+  pending,
+  onClose,
+  accent,
+}: {
+  pending: boolean;
+  onClose: () => void;
+  accent: string;
+}) {
   return (
     <div className="flex gap-2 justify-end mt-6">
-      <button type="button" onClick={onClose} className="text-xs px-4 py-2 rounded-xl border border-[#2a2e34] text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors">
+      <button
+        type="button"
+        onClick={onClose}
+        className="text-xs px-4 py-2 rounded-xl border border-[#2a2e34] text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+      >
         Cancel
       </button>
       <button
@@ -68,7 +101,13 @@ function SubmitRow({ pending, onClose, accent }: { pending: boolean; onClose: ()
   );
 }
 
-function InvoiceModal({ onClose }: { onClose: () => void }) {
+function InvoiceModal({
+  projects,
+  onClose,
+}: {
+  projects: Project[];
+  onClose: () => void;
+}) {
   const [pending, start] = useTransition();
   const today = format(new Date(), "yyyy-MM-dd");
 
@@ -76,16 +115,20 @@ function InvoiceModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const amount = fd.get("amount") as string;
+    const projectId = (fd.get("projectId") as string) || "";
+    const invoiceType = (fd.get("invoiceType") as string) || "";
+    const status = (fd.get("status") as string) || "Draft";
     start(async () => {
       try {
         await createInvoiceAction({
           "Invoice Number": (fd.get("invoiceNumber") as string) || undefined,
           Amount: amount ? parseFloat(amount) : undefined,
-          "Invoice Type": (fd.get("invoiceType") as string) || undefined,
-          Status: (fd.get("status") as string) || "Draft",
+          "Invoice Type": invoiceType ? (invoiceType as InvoiceTypeValue) : undefined,
+          Status: status as InvoiceStatusValue,
           "Issue Date": (fd.get("issueDate") as string) || undefined,
           "Due Date": (fd.get("dueDate") as string) || undefined,
           Notes: (fd.get("notes") as string) || undefined,
+          Project: projectId ? [projectId] : undefined,
         });
         toast.success("Invoice created");
         onClose();
@@ -96,20 +139,40 @@ function InvoiceModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="New Invoice" accent="#bfff3a" onClose={onClose}>
+    <Modal title="New Invoice" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Field label="Project">
+          <select name="projectId" className={selectCls} defaultValue="">
+            <option value="">— None</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.Name}
+              </option>
+            ))}
+          </select>
+        </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Invoice Number">
             <input name="invoiceNumber" placeholder="INV-0009" className={inputCls} />
           </Field>
           <Field label="Amount ($)">
-            <input name="amount" type="number" min="0" step="0.01" placeholder="0.00" className={inputCls} required />
+            <input
+              name="amount"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              className={inputCls}
+              required
+            />
           </Field>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Type">
             <select name="invoiceType" className={selectCls} defaultValue="">
-              <option value="" disabled>Select…</option>
+              <option value="" disabled>
+                Select…
+              </option>
               <option value="deposit">Deposit</option>
               <option value="milestone">Milestone</option>
               <option value="final">Final</option>
@@ -152,11 +215,12 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const amount = fd.get("amount") as string;
+    const category = (fd.get("category") as string) || "";
     start(async () => {
       try {
         await createExpenseAction({
           Name: fd.get("name") as string,
-          Category: (fd.get("category") as string) || undefined,
+          Category: category ? (category as ExpenseCategoryValue) : undefined,
           Amount: amount ? parseFloat(amount) : undefined,
           Date: (fd.get("date") as string) || undefined,
           Recurring: fd.get("recurring") === "on",
@@ -171,20 +235,35 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="New Expense" accent="#ff4d8b" onClose={onClose}>
+    <Modal title="New Expense" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Name">
-            <input name="name" placeholder="e.g. Figma subscription" className={inputCls} required />
+            <input
+              name="name"
+              placeholder="e.g. Figma subscription"
+              className={inputCls}
+              required
+            />
           </Field>
           <Field label="Amount ($)">
-            <input name="amount" type="number" min="0" step="0.01" placeholder="0.00" className={inputCls} required />
+            <input
+              name="amount"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              className={inputCls}
+              required
+            />
           </Field>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Category">
             <select name="category" className={selectCls} defaultValue="">
-              <option value="" disabled>Select…</option>
+              <option value="" disabled>
+                Select…
+              </option>
               <option value="Software">Software</option>
               <option value="Subcontractors">Subcontractors</option>
               <option value="Hosting">Hosting</option>
@@ -210,25 +289,51 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ProjectModal({ onClose }: { onClose: () => void }) {
+function ProjectModal({
+  clients,
+  onClose,
+}: {
+  clients: Client[];
+  onClose: () => void;
+}) {
   const [pending, start] = useTransition();
+  const [paymentStructure, setPaymentStructure] = useState<string>("");
   const today = format(new Date(), "yyyy-MM-dd");
+
+  const isRecurring =
+    paymentStructure === "recurring_monthly" || paymentStructure === "recurring_custom";
+  const isDepositFinal = paymentStructure === "deposit_final";
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const totalValue = fd.get("totalValue") as string;
+    const recurringAmount = fd.get("recurringAmount") as string;
+    const depositPct = fd.get("depositPct") as string;
+    const clientId = (fd.get("clientId") as string) || "";
+    const status = (fd.get("status") as string) || "Lead";
+    const paymentStructureField = (fd.get("paymentStructure") as string) || "";
+    const recurringFreq = (fd.get("recurringFreq") as string) || "";
+
     start(async () => {
       try {
         await createProjectAction({
           Name: fd.get("name") as string,
-          Status: (fd.get("status") as string) || "Lead",
-          "Payment Structure": (fd.get("paymentStructure") as string) || undefined,
+          Status: status as ProjectStatusValue,
+          "Payment Structure": paymentStructureField
+            ? (paymentStructureField as PaymentStructureValue)
+            : undefined,
           "Total Value": totalValue ? parseFloat(totalValue) : undefined,
+          "Recurring Amount": recurringAmount ? parseFloat(recurringAmount) : undefined,
+          "Recurring Frequency": recurringFreq
+            ? (recurringFreq as RecurringFrequencyValue)
+            : undefined,
+          "Deposit Percentage": depositPct ? parseFloat(depositPct) : undefined,
           "Start Date": (fd.get("startDate") as string) || undefined,
           Notes: (fd.get("notes") as string) || undefined,
           Owner: (fd.get("owner") as string) || undefined,
           "Service Type": (fd.get("serviceType") as string) || undefined,
+          Client: clientId ? [clientId] : undefined,
         });
         toast.success("Project created");
         onClose();
@@ -239,10 +344,25 @@ function ProjectModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="New Project" accent="#c44dff" onClose={onClose}>
+    <Modal title="New Project" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <Field label="Project Name">
-          <input name="name" placeholder="e.g. Brand redesign for Acme" className={inputCls} required />
+          <input
+            name="name"
+            placeholder="e.g. Brand redesign for Acme"
+            className={inputCls}
+            required
+          />
+        </Field>
+        <Field label="Client">
+          <select name="clientId" className={selectCls} defaultValue="">
+            <option value="">— None</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.Company || c.Name}
+              </option>
+            ))}
+          </select>
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Status">
@@ -254,8 +374,15 @@ function ProjectModal({ onClose }: { onClose: () => void }) {
             </select>
           </Field>
           <Field label="Payment Structure">
-            <select name="paymentStructure" className={selectCls} defaultValue="">
-              <option value="" disabled>Select…</option>
+            <select
+              name="paymentStructure"
+              className={selectCls}
+              defaultValue=""
+              onChange={(e) => setPaymentStructure(e.target.value)}
+            >
+              <option value="" disabled>
+                Select…
+              </option>
               <option value="one_time">One-time</option>
               <option value="deposit_final">Deposit + Final</option>
               <option value="milestones">Milestones</option>
@@ -266,12 +393,53 @@ function ProjectModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Total Value ($)">
-            <input name="totalValue" type="number" min="0" step="0.01" placeholder="0.00" className={inputCls} />
+            <input
+              name="totalValue"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              className={inputCls}
+            />
           </Field>
           <Field label="Start Date">
             <input name="startDate" type="date" defaultValue={today} className={inputCls} />
           </Field>
         </div>
+        {isRecurring && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Recurring Amount ($)">
+              <input
+                name="recurringAmount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Frequency">
+              <select name="recurringFreq" className={selectCls} defaultValue="monthly">
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </Field>
+          </div>
+        )}
+        {isDepositFinal && (
+          <Field label="Deposit Percentage (e.g. 50)">
+            <input
+              name="depositPct"
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              placeholder="50"
+              className={inputCls}
+            />
+          </Field>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Owner">
             <select name="owner" className={selectCls} defaultValue="">
@@ -299,8 +467,29 @@ function ProjectModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function QuickActions() {
-  const [open, setOpen] = useState<Modal>(null);
+// String-literal aliases reused above. Keeping them local avoids adding
+// runtime exports from the airtable lib for things the modals already
+// know how to constrain.
+type InvoiceTypeValue = "deposit" | "milestone" | "final" | "recurring" | "one_off";
+type InvoiceStatusValue = "Draft" | "Sent" | "Paid" | "Overdue" | "Void";
+type ExpenseCategoryValue =
+  | "Software"
+  | "Subcontractors"
+  | "Hosting"
+  | "Hardware"
+  | "Marketing"
+  | "Other";
+type ProjectStatusValue = "Lead" | "In Progress" | "Review" | "Done" | "Cancelled";
+type PaymentStructureValue =
+  | "one_time"
+  | "deposit_final"
+  | "milestones"
+  | "recurring_monthly"
+  | "recurring_custom";
+type RecurringFrequencyValue = "monthly" | "quarterly" | "yearly";
+
+export function QuickActions({ clients = [], projects = [] }: Props) {
+  const [open, setOpen] = useState<ModalKind>(null);
 
   return (
     <>
@@ -325,9 +514,9 @@ export function QuickActions() {
         </button>
       </div>
 
-      {open === "invoice" && <InvoiceModal onClose={() => setOpen(null)} />}
+      {open === "invoice" && <InvoiceModal projects={projects} onClose={() => setOpen(null)} />}
       {open === "expense" && <ExpenseModal onClose={() => setOpen(null)} />}
-      {open === "project" && <ProjectModal onClose={() => setOpen(null)} />}
+      {open === "project" && <ProjectModal clients={clients} onClose={() => setOpen(null)} />}
     </>
   );
 }

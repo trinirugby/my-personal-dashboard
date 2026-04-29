@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { parseISO, differenceInDays, startOfYear } from "date-fns";
 import type { Client, Project, Invoice } from "@/lib/airtable";
+import { isOverdue } from "@/lib/invoices";
 
 type Props = {
   clients: Client[];
@@ -29,7 +30,7 @@ export function BusinessCounters({ clients, projects, invoices, onJumpToOverdue 
     const leads = projects.filter((p) => p.Status === "Lead").length;
     const doneProjects = projects.filter((p) => p.Status === "Done").length;
 
-    const overdueInvoices = invoices.filter((i) => i.Status === "Overdue");
+    const overdueInvoices = invoices.filter((i) => isOverdue(i));
     const overdueCount = overdueInvoices.length;
     const overdueAmount = overdueInvoices.reduce((s, i) => s + (i.Amount ?? 0), 0);
 

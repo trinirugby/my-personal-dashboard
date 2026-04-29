@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import { parseISO, isAfter, addDays, format, isBefore } from "date-fns";
 import { EditInvoiceModal } from "@/components/dashboard/edit-invoice-modal";
-import type { Invoice } from "@/lib/airtable";
+import type { Invoice, Project } from "@/lib/airtable";
 
-type Props = { invoices: Invoice[] };
+type Props = { invoices: Invoice[]; projects?: Project[] };
 
 const DOT_COLORS = ["#3affd1", "#bfff3a", "#c44dff", "#ff4d8b", "#4d9fff"];
 
-export function Cashflow({ invoices }: Props) {
+export function Cashflow({ invoices, projects = [] }: Props) {
   const [editing, setEditing] = useState<Invoice | null>(null);
 
   const { upcoming, total } = useMemo(() => {
@@ -85,7 +85,9 @@ export function Cashflow({ invoices }: Props) {
         </div>
       )}
 
-      {editing && <EditInvoiceModal invoice={editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <EditInvoiceModal invoice={editing} projects={projects} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

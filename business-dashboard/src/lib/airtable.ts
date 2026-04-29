@@ -1,11 +1,37 @@
 import Airtable from "airtable";
 import { z } from "zod";
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
-  process.env.AIRTABLE_BASE_ID!
-);
+// ─── Lazy client ──────────────────────────────────────────────────────────────
+//
+// Airtable is only constructed when a fetch / mutation actually runs.
+// This keeps `import "@/lib/airtable"` side-effect free, so the dashboard
+// page can be statically analyzed for build / page-data without env vars.
 
-// ─── Schemas ─────────────────────────────────────────────────────────────────
+export class MissingAirtableEnvError extends Error {
+  constructor(missing: string[]) {
+    super(
+      `Missing Airtable env vars: ${missing.join(", ")}. ` +
+        `Set them in .env.local (dev) or Railway service variables (deploy).`,
+    );
+    this.name = "MissingAirtableEnvError";
+  }
+}
+
+let _base: Airtable.Base | null = null;
+
+function getBase(): Airtable.Base {
+  if (_base) return _base;
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const missing: string[] = [];
+  if (!apiKey) missing.push("AIRTABLE_API_KEY");
+  if (!baseId) missing.push("AIRTABLE_BASE_ID");
+  if (missing.length > 0) throw new MissingAirtableEnvError(missing);
+  _base = new Airtable({ apiKey }).base(baseId!);
+  return _base;
+}
+
+// ─── Read schemas ─────────────────────────────────────────────────────────────
 
 export const ClientSchema = z.object({
   id: z.string(),
@@ -104,29 +130,112 @@ export const MilestoneSchema = z.object({
 });
 export type Milestone = z.infer<typeof MilestoneSchema>;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Write schemas ────────────────────────────────────────────────────────────
+//
+// Strict per-table input shapes. Validated *before* any Airtable mutation —
+// so an invalid payload throws locally and never reaches the network.
+// Computed / read-only fields (Created, Paid To Date, Balance Remaining) are
+// excluded; everything else is optional so partial updates work.
+
+export const ClientWriteSchema = z.object({
+  Name: z.string().optional(),
+  Company: z.string().optional(),
+  Email: z.string().optional(),
+  Phone: z.string().optional(),
+  Status: z.enum(["Active", "Inactive", "Lead"]).optional(),
+  Notes: z.string().optional(),
+  Owner: z.string().optional(),
+});
+export type ClientWrite = z.infer<typeof ClientWriteSchema>;
+
+export const ProjectWriteSchema = z.object({
+  Name: z.string().optional(),
+  Client: z.array(z.string()).optional(),
+  Status: z
+    .enum(["Lead", "In Progress", "Review", "Done", "Cancelled"])
+    .optional(),
+  "Payment Structure": z
+    .enum([
+      "one_time",
+      "deposit_final",
+      "milestones",
+      "recurring_monthly",
+      "recurring_custom",
+    ])
+    .optional(),
+  "Total Value": z.number().optional(),
+  "Recurring Amount": z.number().optional(),
+  "Recurring Frequency": z.enum(["monthly", "quarterly", "yearly"]).optional(),
+  "Deposit Percentage": z.number().optional(),
+  "Start Date": z.string().optional(),
+  "End Date": z.string().optional(),
+  Notes: z.string().optional(),
+  Owner: z.string().optional(),
+  "Service Type": z.string().optional(),
+});
+export type ProjectWrite = z.infer<typeof ProjectWriteSchema>;
+
+export const InvoiceWriteSchema = z.object({
+  "Invoice Number": z.string().optional(),
+  Project: z.array(z.string()).optional(),
+  Client: z.array(z.string()).optional(),
+  Amount: z.number().optional(),
+  "Invoice Type": z
+    .enum(["deposit", "milestone", "final", "recurring", "one_off"])
+    .optional(),
+  Status: z.enum(["Draft", "Sent", "Paid", "Overdue", "Void"]).optional(),
+  "Issue Date": z.string().optional(),
+  "Due Date": z.string().optional(),
+  "Paid Date": z.string().optional(),
+  "Payment Method": z
+    .enum(["Bank", "PayPal", "Stripe", "Cash", "Other"])
+    .optional(),
+  "PDF URL": z.string().optional(),
+  Notes: z.string().optional(),
+});
+export type InvoiceWrite = z.infer<typeof InvoiceWriteSchema>;
+
+export const ExpenseWriteSchema = z.object({
+  Name: z.string().optional(),
+  Category: z
+    .enum(["Software", "Subcontractors", "Hosting", "Hardware", "Marketing", "Other"])
+    .optional(),
+  Amount: z.number().optional(),
+  Date: z.string().optional(),
+  Recurring: z.boolean().optional(),
+  Notes: z.string().optional(),
+});
+export type ExpenseWrite = z.infer<typeof ExpenseWriteSchema>;
+
+// ─── Read helpers ─────────────────────────────────────────────────────────────
 
 function parseRecord<T>(
+  table: string,
   record: Airtable.Record<Airtable.FieldSet>,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
 ): T | null {
-  try {
-    return schema.parse({ id: record.id, ...record.fields });
-  } catch {
-    return null;
-  }
+  const result = schema.safeParse({ id: record.id, ...record.fields });
+  if (result.success) return result.data;
+  console.warn("[airtable] dropped record", {
+    table,
+    id: record.id,
+    issues: result.error.issues,
+  });
+  return null;
 }
 
 async function fetchAll<T>(
   table: string,
   schema: z.ZodType<T>,
-  opts: Airtable.SelectOptions<Airtable.FieldSet> = {}
+  opts: Airtable.SelectOptions<Airtable.FieldSet> = {},
 ): Promise<T[]> {
-  const records = await base(table).select(opts).all();
-  return records.map((r) => parseRecord(r, schema)).filter((r): r is T => r !== null);
+  const records = await getBase()(table).select(opts).all();
+  return records
+    .map((r) => parseRecord(table, r, schema))
+    .filter((r): r is T => r !== null);
 }
 
-// ─── Read functions ───────────────────────────────────────────────────────────
+// ─── Reads ────────────────────────────────────────────────────────────────────
 
 export const getClients = (opts?: Airtable.SelectOptions<Airtable.FieldSet>) =>
   fetchAll("Clients", ClientSchema, opts);
@@ -141,53 +250,57 @@ export const getExpenses = (opts?: Airtable.SelectOptions<Airtable.FieldSet>) =>
   fetchAll("Expenses", ExpenseSchema, opts);
 
 export const getMilestones = (
-  opts?: Airtable.SelectOptions<Airtable.FieldSet>
+  opts?: Airtable.SelectOptions<Airtable.FieldSet>,
 ) => fetchAll("Milestones", MilestoneSchema, opts);
 
-// ─── Write functions ──────────────────────────────────────────────────────────
+// ─── Write helpers ────────────────────────────────────────────────────────────
+//
+// Validate input first. Return the raw record (id + fields) without re-parsing
+// through the read schema, so a successful Airtable write is never reported
+// as a failure due to an unexpected response field.
 
-type Fields = Record<string, unknown>;
+export type AirtableRecord = { id: string; fields: Record<string, unknown> };
 
-async function create<T>(
+async function createRecord<TInput>(
   table: string,
-  schema: z.ZodType<T>,
-  fields: Fields
-): Promise<T> {
-  const record = await base(table).create(fields as Airtable.FieldSet);
-  const parsed = parseRecord(record, schema);
-  if (!parsed) throw new Error(`Failed to parse created ${table} record`);
-  return parsed;
+  schema: z.ZodType<TInput>,
+  payload: TInput,
+): Promise<AirtableRecord> {
+  const fields = schema.parse(payload) as Airtable.FieldSet;
+  const record = await getBase()(table).create(fields);
+  return { id: record.id, fields: record.fields as Record<string, unknown> };
 }
 
-async function update<T>(
+async function updateRecord<TInput>(
   table: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<TInput>,
   id: string,
-  fields: Fields
-): Promise<T> {
-  const record = await base(table).update(id, fields as Airtable.FieldSet);
-  const parsed = parseRecord(record, schema);
-  if (!parsed) throw new Error(`Failed to parse updated ${table} record`);
-  return parsed;
+  payload: TInput,
+): Promise<AirtableRecord> {
+  const fields = schema.parse(payload) as Airtable.FieldSet;
+  const record = await getBase()(table).update(id, fields);
+  return { id: record.id, fields: record.fields as Record<string, unknown> };
 }
 
-export const createClient = (fields: Omit<Fields, "id">) =>
-  create("Clients", ClientSchema, fields);
+// ─── Writes ───────────────────────────────────────────────────────────────────
 
-export const createProject = (fields: Omit<Fields, "id">) =>
-  create("Projects", ProjectSchema, fields);
+export const createClient = (payload: ClientWrite) =>
+  createRecord("Clients", ClientWriteSchema, payload);
 
-export const createInvoice = (fields: Omit<Fields, "id">) =>
-  create("Invoices", InvoiceSchema, fields);
+export const createProject = (payload: ProjectWrite) =>
+  createRecord("Projects", ProjectWriteSchema, payload);
 
-export const createExpense = (fields: Omit<Fields, "id">) =>
-  create("Expenses", ExpenseSchema, fields);
+export const createInvoice = (payload: InvoiceWrite) =>
+  createRecord("Invoices", InvoiceWriteSchema, payload);
 
-export const updateInvoice = (id: string, fields: Omit<Fields, "id">) =>
-  update("Invoices", InvoiceSchema, id, fields);
+export const createExpense = (payload: ExpenseWrite) =>
+  createRecord("Expenses", ExpenseWriteSchema, payload);
 
-export const updateProject = (id: string, fields: Omit<Fields, "id">) =>
-  update("Projects", ProjectSchema, id, fields);
+export const updateInvoice = (id: string, payload: InvoiceWrite) =>
+  updateRecord("Invoices", InvoiceWriteSchema, id, payload);
 
-export const updateExpense = (id: string, fields: Omit<Fields, "id">) =>
-  update("Expenses", ExpenseSchema, id, fields);
+export const updateProject = (id: string, payload: ProjectWrite) =>
+  updateRecord("Projects", ProjectWriteSchema, id, payload);
+
+export const updateExpense = (id: string, payload: ExpenseWrite) =>
+  updateRecord("Expenses", ExpenseWriteSchema, id, payload);

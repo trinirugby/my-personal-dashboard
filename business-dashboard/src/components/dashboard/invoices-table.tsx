@@ -5,6 +5,7 @@ import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { markInvoicePaid } from "@/app/actions";
 import { EditInvoiceModal } from "@/components/dashboard/edit-invoice-modal";
+import { effectiveStatus, isOverdue } from "@/lib/invoices";
 import type { Invoice, Project } from "@/lib/airtable";
 
 export type InvoiceStatusFilter = "All" | "Sent" | "Overdue" | "Paid" | "Draft";
@@ -92,7 +93,13 @@ export function InvoicesTable({
   for (const p of projects ?? []) projectToClient.set(p.id, p.Client?.[0]);
 
   const filtered = invoices
-    .filter((inv) => (statusFilter === "All" ? true : inv.Status === statusFilter))
+    .filter((inv) => {
+      if (statusFilter === "All") return true;
+      if (statusFilter === "Overdue") return isOverdue(inv);
+      // For "Sent", exclude past-due invoices (they bubble up under Overdue).
+      if (statusFilter === "Sent") return inv.Status === "Sent" && !isOverdue(inv);
+      return inv.Status === statusFilter;
+    })
     .filter((inv) => {
       if (!clientFilter) return true;
       if (inv.Client?.[0] === clientFilter) return true;
@@ -162,6 +169,8 @@ export function InvoicesTable({
             ) : (
               filtered.map((inv) => {
                 const isExpanded = expandedId === inv.id;
+                const renderStatus = effectiveStatus(inv);
+                const showMarkPaid = renderStatus === "Sent" || renderStatus === "Overdue";
                 return (
                   <Fragment key={inv.id}>
                     <tr
@@ -181,12 +190,10 @@ export function InvoicesTable({
                         {inv["Due Date"] ? format(parseISO(inv["Due Date"]), "MMM d") : "—"}
                       </td>
                       <td className="py-3">
-                        <StatusBadge status={inv.Status ?? "Draft"} />
+                        <StatusBadge status={renderStatus} />
                       </td>
                       <td className="py-3 text-right">
-                        {(inv.Status === "Sent" || inv.Status === "Overdue") && (
-                          <MarkPaidButton invoiceId={inv.id} />
-                        )}
+                        {showMarkPaid && <MarkPaidButton invoiceId={inv.id} />}
                       </td>
                     </tr>
                     {isExpanded && (
@@ -239,7 +246,13 @@ export function InvoicesTable({
           </tbody>
         </table>
       </div>
-      {editingInvoice && <EditInvoiceModal invoice={editingInvoice} onClose={() => setEditingInvoice(null)} />}
+      {editingInvoice && (
+        <EditInvoiceModal
+          invoice={editingInvoice}
+          projects={projects}
+          onClose={() => setEditingInvoice(null)}
+        />
+      )}
     </div>
   );
 }

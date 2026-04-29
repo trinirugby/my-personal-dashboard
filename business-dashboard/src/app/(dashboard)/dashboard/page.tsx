@@ -1,5 +1,15 @@
-import { getInvoices, getProjects, getExpenses, getClients } from "@/lib/airtable";
+import {
+  getInvoices,
+  getProjects,
+  getExpenses,
+  getClients,
+  MissingAirtableEnvError,
+} from "@/lib/airtable";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+
+// Always render at request time. Dashboard data is live; never snapshot at build.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function DashboardPage() {
   let invoices, projects, expenses, clients;
@@ -10,10 +20,20 @@ export default async function DashboardPage() {
       getExpenses(),
       getClients(),
     ]);
-  } catch {
+  } catch (err) {
+    if (err instanceof MissingAirtableEnvError) {
+      return (
+        <div className="p-10 max-w-xl mx-auto text-center text-sm text-zinc-300">
+          <p className="text-base font-semibold text-[#fbbf24] mb-2">
+            Airtable env vars are missing
+          </p>
+          <p className="text-zinc-400">{err.message}</p>
+        </div>
+      );
+    }
     return (
       <div className="p-10 text-center text-[#ff4d8b] text-sm">
-        Failed to load dashboard data. Check your Airtable credentials.
+        Failed to load dashboard data. Check the server logs for the underlying error.
       </div>
     );
   }

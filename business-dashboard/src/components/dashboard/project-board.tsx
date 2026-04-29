@@ -1,20 +1,20 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useDroppable } from "@dnd-kit/core";
-import { useDraggable } from "@dnd-kit/core";
 import { toast } from "sonner";
-import { updateProjectStatus, updateProjectAction } from "@/app/actions";
-import type { Project } from "@/lib/airtable";
+import { updateProjectAction, updateProjectStatus } from "@/app/actions";
+import type { Client, Project } from "@/lib/airtable";
 
 const OWNER_COLORS: Record<string, string> = {
   M: "#bfff3a",
@@ -37,11 +37,20 @@ function ownerColor(initials: string | null): string {
   return OWNER_COLORS[initials] ?? "#fbbf24";
 }
 
-const inputCls = "w-full bg-[#0b0d10] border border-[#2a2e34] rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors";
+const inputCls =
+  "w-full bg-[#0b0d10] border border-[#2a2e34] rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors";
 const selectCls = inputCls + " cursor-pointer";
 
-type Props = { projects: Project[] };
+type Props = { projects: Project[]; clients?: Client[] };
 type Status = "Lead" | "In Progress" | "Review" | "Done";
+type ProjectStatusValue = Status | "Cancelled";
+type PaymentStructureValue =
+  | "one_time"
+  | "deposit_final"
+  | "milestones"
+  | "recurring_monthly"
+  | "recurring_custom";
+type RecurringFrequencyValue = "monthly" | "quarterly" | "yearly";
 
 const PAYMENT_LABELS: Record<string, string> = {
   one_time: "One-time",
@@ -68,7 +77,15 @@ const PAYMENT_COLORS: Record<string, string> = {
   recurring_custom: "bg-[#bfff3a]/10 text-[#bfff3a]",
 };
 
-function ProjectCard({ project, isDragging = false, onClick }: { project: Project; isDragging?: boolean; onClick?: () => void }) {
+function ProjectCard({
+  project,
+  isDragging = false,
+  onClick,
+}: {
+  project: Project;
+  isDragging?: boolean;
+  onClick?: () => void;
+}) {
   const initials = ownerInitials(project.Owner);
   const ownerCol = ownerColor(initials);
   const serviceType = project["Service Type"];
@@ -99,8 +116,13 @@ function ProjectCard({ project, isDragging = false, onClick }: { project: Projec
           </span>
         )}
         {project["Payment Structure"] && (
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${PAYMENT_COLORS[project["Payment Structure"]] ?? "bg-zinc-700 text-zinc-300"}`}>
-            {PAYMENT_LABELS[project["Payment Structure"]] ?? project["Payment Structure"].replace(/_/g, " ")}
+          <span
+            className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+              PAYMENT_COLORS[project["Payment Structure"]] ?? "bg-zinc-700 text-zinc-300"
+            }`}
+          >
+            {PAYMENT_LABELS[project["Payment Structure"]] ??
+              project["Payment Structure"].replace(/_/g, " ")}
           </span>
         )}
         {(project["Total Value"] ?? 0) > 0 && (
@@ -121,14 +143,31 @@ function ProjectCard({ project, isDragging = false, onClick }: { project: Projec
   );
 }
 
-function ProjectDetailModal({ project, onClose }: { project: Project; onClose: () => void }) {
+function ProjectDetailModal({
+  project,
+  clients,
+  onClose,
+}: {
+  project: Project;
+  clients: Client[];
+  onClose: () => void;
+}) {
   const [editMode, setEditMode] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState(false);
+  const [paymentStructure, setPaymentStructure] = useState<string>(
+    project["Payment Structure"] ?? "",
+  );
   const style = COLUMN_STYLES[project.Status as Status] ?? COLUMN_STYLES["Lead"];
 
+  const isRecurring =
+    paymentStructure === "recurring_monthly" || paymentStructure === "recurring_custom";
+  const isDepositFinal = paymentStructure === "deposit_final";
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -137,19 +176,34 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const totalValue = fd.get("totalValue") as string;
+    const recurringAmount = fd.get("recurringAmount") as string;
+    const depositPct = fd.get("depositPct") as string;
+    const clientId = (fd.get("clientId") as string) || "";
+    const status = (fd.get("status") as string) || "";
+    const paymentStructureField = (fd.get("paymentStructure") as string) || "";
+    const recurringFreq = (fd.get("recurringFreq") as string) || "";
+
     setError(false);
     start(async () => {
       try {
         await updateProjectAction(project.id, {
           Name: (fd.get("name") as string) || undefined,
-          Status: (fd.get("status") as string) || undefined,
-          "Payment Structure": (fd.get("paymentStructure") as string) || undefined,
+          Status: status ? (status as ProjectStatusValue) : undefined,
+          "Payment Structure": paymentStructureField
+            ? (paymentStructureField as PaymentStructureValue)
+            : undefined,
           "Total Value": totalValue ? parseFloat(totalValue) : undefined,
+          "Recurring Amount": recurringAmount ? parseFloat(recurringAmount) : undefined,
+          "Recurring Frequency": recurringFreq
+            ? (recurringFreq as RecurringFrequencyValue)
+            : undefined,
+          "Deposit Percentage": depositPct ? parseFloat(depositPct) : undefined,
           "Start Date": (fd.get("startDate") as string) || undefined,
           "End Date": (fd.get("endDate") as string) || undefined,
           Notes: (fd.get("notes") as string) || undefined,
           Owner: (fd.get("owner") as string) || undefined,
           "Service Type": (fd.get("serviceType") as string) || undefined,
+          Client: clientId ? [clientId] : undefined,
         });
         toast.success("Project saved");
         onClose();
@@ -163,17 +217,27 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
     >
       <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-start justify-between mb-4">
           <p className="text-sm font-semibold text-white leading-snug pr-4">{project.Name}</p>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => setEditMode(!editMode)} className="text-xs text-zinc-500 hover:text-white transition-colors">
+            <button
+              onClick={() => setEditMode(!editMode)}
+              className="text-xs text-zinc-500 hover:text-white transition-colors"
+            >
               {editMode ? "View" : "Edit"}
             </button>
-            <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors text-lg leading-none">✕</button>
+            <button
+              onClick={onClose}
+              className="text-zinc-500 hover:text-white transition-colors text-lg leading-none"
+            >
+              ✕
+            </button>
           </div>
         </div>
 
@@ -183,6 +247,23 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
               <label className="text-xs text-zinc-400">Name</label>
               <input name="name" defaultValue={project.Name} className={inputCls} required />
             </div>
+            {clients.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400">Client</label>
+                <select
+                  name="clientId"
+                  defaultValue={project.Client?.[0] ?? ""}
+                  className={selectCls}
+                >
+                  <option value="">— None</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.Company || c.Name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">Status</label>
@@ -196,12 +277,24 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">Total Value ($)</label>
-                <input name="totalValue" type="number" min="0" step="0.01" defaultValue={project["Total Value"] ?? ""} className={inputCls} />
+                <input
+                  name="totalValue"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={project["Total Value"] ?? ""}
+                  className={inputCls}
+                />
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-zinc-400">Payment Structure</label>
-              <select name="paymentStructure" defaultValue={project["Payment Structure"] ?? ""} className={selectCls}>
+              <select
+                name="paymentStructure"
+                defaultValue={project["Payment Structure"] ?? ""}
+                onChange={(e) => setPaymentStructure(e.target.value)}
+                className={selectCls}
+              >
                 <option value="">—</option>
                 <option value="one_time">One-time</option>
                 <option value="deposit_final">Deposit + Final</option>
@@ -210,6 +303,47 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
                 <option value="recurring_custom">Recurring custom</option>
               </select>
             </div>
+            {isRecurring && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-zinc-400">Recurring Amount ($)</label>
+                  <input
+                    name="recurringAmount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={project["Recurring Amount"] ?? ""}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-zinc-400">Frequency</label>
+                  <select
+                    name="recurringFreq"
+                    defaultValue={project["Recurring Frequency"] ?? "monthly"}
+                    className={selectCls}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+              </div>
+            )}
+            {isDepositFinal && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400">Deposit Percentage (e.g. 50)</label>
+                <input
+                  name="depositPct"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  defaultValue={project["Deposit Percentage"] ?? ""}
+                  className={inputCls}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">Owner</label>
@@ -222,7 +356,11 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">Service Type</label>
-                <select name="serviceType" defaultValue={project["Service Type"] ?? ""} className={selectCls}>
+                <select
+                  name="serviceType"
+                  defaultValue={project["Service Type"] ?? ""}
+                  className={selectCls}
+                >
                   <option value="">—</option>
                   <option value="Web Dev">Web Dev</option>
                   <option value="AI Automation">AI Automation</option>
@@ -233,23 +371,46 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">Start Date</label>
-                <input name="startDate" type="date" defaultValue={project["Start Date"] ?? ""} className={inputCls} />
+                <input
+                  name="startDate"
+                  type="date"
+                  defaultValue={project["Start Date"] ?? ""}
+                  className={inputCls}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">End Date</label>
-                <input name="endDate" type="date" defaultValue={project["End Date"] ?? ""} className={inputCls} />
+                <input
+                  name="endDate"
+                  type="date"
+                  defaultValue={project["End Date"] ?? ""}
+                  className={inputCls}
+                />
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-zinc-400">Notes</label>
-              <input name="notes" defaultValue={project.Notes ?? ""} placeholder="Optional" className={inputCls} />
+              <input
+                name="notes"
+                defaultValue={project.Notes ?? ""}
+                placeholder="Optional"
+                className={inputCls}
+              />
             </div>
             {error && <p className="text-xs text-[#ff4d8b]">Failed to save. Try again.</p>}
             <div className="flex gap-2 justify-end mt-1">
-              <button type="button" onClick={() => setEditMode(false)} className="text-xs px-4 py-2 rounded-xl border border-[#2a2e34] text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors">
+              <button
+                type="button"
+                onClick={() => setEditMode(false)}
+                className="text-xs px-4 py-2 rounded-xl border border-[#2a2e34] text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+              >
                 Cancel
               </button>
-              <button type="submit" disabled={pending} className="text-xs px-4 py-2 rounded-xl font-semibold bg-[#c44dff] text-white disabled:opacity-40 transition-colors hover:bg-[#c44dff]/80">
+              <button
+                type="submit"
+                disabled={pending}
+                className="text-xs px-4 py-2 rounded-xl font-semibold bg-[#c44dff] text-white disabled:opacity-40 transition-colors hover:bg-[#c44dff]/80"
+              >
                 {pending ? "Saving…" : "Save"}
               </button>
             </div>
@@ -276,19 +437,30 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
               {project["Payment Structure"] && (
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Payment</span>
-                  <span className="text-zinc-300">{PAYMENT_LABELS[project["Payment Structure"]] ?? project["Payment Structure"]}</span>
+                  <span className="text-zinc-300">
+                    {PAYMENT_LABELS[project["Payment Structure"]] ?? project["Payment Structure"]}
+                  </span>
                 </div>
               )}
               {(project["Total Value"] ?? 0) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Total value</span>
-                  <span className="text-white font-semibold">${(project["Total Value"] ?? 0).toLocaleString()}</span>
+                  <span className="text-white font-semibold">
+                    ${(project["Total Value"] ?? 0).toLocaleString()}
+                  </span>
                 </div>
               )}
               {project["Recurring Amount"] && (
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Recurring</span>
-                  <span className="text-zinc-300">${project["Recurring Amount"].toLocaleString()}/mo</span>
+                  <span className="text-zinc-300">
+                    ${project["Recurring Amount"].toLocaleString()}
+                    {project["Recurring Frequency"] === "yearly"
+                      ? "/yr"
+                      : project["Recurring Frequency"] === "quarterly"
+                      ? "/qtr"
+                      : "/mo"}
+                  </span>
                 </div>
               )}
               {project["Start Date"] && (
@@ -306,7 +478,9 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
               {(project["Paid To Date"] ?? 0) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Paid to date</span>
-                  <span className="text-[#bfff3a] font-semibold">${(project["Paid To Date"] ?? 0).toLocaleString()}</span>
+                  <span className="text-[#bfff3a] font-semibold">
+                    ${(project["Paid To Date"] ?? 0).toLocaleString()}
+                  </span>
                 </div>
               )}
             </div>
@@ -330,13 +504,30 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
 function DraggableCard({ project, onDetail }: { project: Project; onDetail: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: project.id });
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes} className="cursor-grab active:cursor-grabbing">
-      <ProjectCard project={project} isDragging={isDragging} onClick={isDragging ? undefined : onDetail} />
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className="cursor-grab active:cursor-grabbing"
+    >
+      <ProjectCard
+        project={project}
+        isDragging={isDragging}
+        onClick={isDragging ? undefined : onDetail}
+      />
     </div>
   );
 }
 
-function Column({ status, projects, onDetail }: { status: Status; projects: Project[]; onDetail: (p: Project) => void }) {
+function Column({
+  status,
+  projects,
+  onDetail,
+}: {
+  status: Status;
+  projects: Project[];
+  onDetail: (p: Project) => void;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const style = COLUMN_STYLES[status];
 
@@ -365,30 +556,37 @@ function Column({ status, projects, onDetail }: { status: Status; projects: Proj
 
 type OwnerFilter = "All" | string;
 
-export function ProjectBoard({ projects }: Props) {
-  const [localProjects, setLocalProjects] = useState(projects);
+type OptimisticAction = { id: string; status: Status };
+
+export function ProjectBoard({ projects, clients = [] }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detailProject, setDetailProject] = useState<Project | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("All");
   const [, startTransition] = useTransition();
 
-  useEffect(() => { setLocalProjects(projects); }, [projects]);
+  // useOptimistic gives us a derived view that resets to the latest server prop
+  // automatically; no setState-in-effect mirror needed.
+  const [optimisticProjects, applyOptimistic] = useOptimistic<Project[], OptimisticAction>(
+    projects,
+    (current, action) =>
+      current.map((p) => (p.id === action.id ? { ...p, Status: action.status } : p)),
+  );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  const activeProject = localProjects.find((p) => p.id === activeId);
+  const activeProject = optimisticProjects.find((p) => p.id === activeId);
 
   const ownerOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const p of localProjects) {
+    for (const p of optimisticProjects) {
       if (p.Owner) set.add(p.Owner);
     }
     return Array.from(set).sort();
-  }, [localProjects]);
+  }, [optimisticProjects]);
 
-  const visible = localProjects
+  const visible = optimisticProjects
     .filter((p) => p.Status !== "Cancelled")
-    .filter((p) => ownerFilter === "All" ? true : p.Owner === ownerFilter);
+    .filter((p) => (ownerFilter === "All" ? true : p.Owner === ownerFilter));
 
   function handleDragStart({ active }: DragStartEvent) {
     setActiveId(active.id as string);
@@ -400,19 +598,17 @@ export function ProjectBoard({ projects }: Props) {
     const newStatus = over.id as string;
     if (!COLUMNS.includes(newStatus as Status)) return;
     const typedStatus = newStatus as Status;
-    const project = localProjects.find((p) => p.id === active.id);
+    const project = optimisticProjects.find((p) => p.id === active.id);
     if (!project || project.Status === typedStatus) return;
 
-    const prevProjects = localProjects;
-    setLocalProjects((prev) =>
-      prev.map((p) => (p.id === active.id ? { ...p, Status: typedStatus } : p))
-    );
     startTransition(async () => {
+      applyOptimistic({ id: active.id as string, status: typedStatus });
       try {
         await updateProjectStatus(active.id as string, typedStatus);
         toast.success(`Moved to ${typedStatus}`);
       } catch {
-        setLocalProjects(prevProjects);
+        // The transition tears down on throw; the next server render will replace
+        // the optimistic state with whatever is now in Airtable.
         toast.error("Failed to move project");
       }
     });
@@ -444,23 +640,25 @@ export function ProjectBoard({ projects }: Props) {
       </div>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="overflow-x-auto pb-2">
-        <div className="flex gap-4 min-w-max md:min-w-0">
-          {COLUMNS.map((status) => (
-            <Column
-              key={status}
-              status={status}
-              projects={visible.filter((p) => p.Status === status)}
-              onDetail={setDetailProject}
-            />
-          ))}
+          <div className="flex gap-4 min-w-max md:min-w-0">
+            {COLUMNS.map((status) => (
+              <Column
+                key={status}
+                status={status}
+                projects={visible.filter((p) => p.Status === status)}
+                onDetail={setDetailProject}
+              />
+            ))}
+          </div>
         </div>
-        </div>
-        <DragOverlay>
-          {activeProject ? <ProjectCard project={activeProject} /> : null}
-        </DragOverlay>
+        <DragOverlay>{activeProject ? <ProjectCard project={activeProject} /> : null}</DragOverlay>
       </DndContext>
       {detailProject && (
-        <ProjectDetailModal project={detailProject} onClose={() => setDetailProject(null)} />
+        <ProjectDetailModal
+          project={detailProject}
+          clients={clients}
+          onClose={() => setDetailProject(null)}
+        />
       )}
     </div>
   );

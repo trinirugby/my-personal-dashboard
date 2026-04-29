@@ -12,6 +12,14 @@ type Props = {
   onClearCategoryFilter?: () => void;
 };
 
+type ExpenseCategoryValue =
+  | "Software"
+  | "Subcontractors"
+  | "Hosting"
+  | "Hardware"
+  | "Marketing"
+  | "Other";
+
 const CATEGORY_COLORS: Record<string, string> = {
   Software: "#ff4d8b",
   Subcontractors: "#c44dff",
@@ -39,11 +47,12 @@ function EditModal({ expense, onClose }: { expense: Expense; onClose: () => void
     const fd = new FormData(e.currentTarget);
     const amount = fd.get("amount") as string;
     setError(false);
+    const category = (fd.get("category") as string) || "";
     start(async () => {
       try {
         await updateExpenseAction(expense.id, {
           Name: (fd.get("name") as string) || undefined,
-          Category: (fd.get("category") as string) || undefined,
+          Category: category ? (category as ExpenseCategoryValue) : undefined,
           Amount: amount ? parseFloat(amount) : undefined,
           Date: (fd.get("date") as string) || undefined,
           Recurring: fd.get("recurring") === "on",

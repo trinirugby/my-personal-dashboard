@@ -20,7 +20,6 @@ import {
   isBefore,
   isAfter,
   getDate,
-  getDaysInMonth,
 } from "date-fns";
 import type { Invoice, Expense } from "@/lib/airtable";
 
@@ -134,24 +133,41 @@ function buildMonthlyData(invoices: Invoice[], expenses: Expense[], range: Range
   return Array.from(buckets.values());
 }
 
-function CustomTooltip({ active, payload, label, onDrillDown }: any) {
+type TooltipPayloadItem = {
+  name?: string;
+  value?: number;
+  color?: string;
+  payload?: PeriodData;
+};
+
+type CustomTooltipProps = {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?: string;
+  onDrillDown?: (data: PeriodData) => void;
+};
+
+function CustomTooltip({ active, payload, label, onDrillDown }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
-  const data: PeriodData = payload[0]?.payload;
+  const data = payload[0]?.payload;
+  if (!data) return null;
   return (
     <div className="bg-[#14181d] border border-[#2a2e34] rounded-2xl p-4 min-w-[200px] shadow-xl">
       <p className="text-xs text-zinc-500 mb-3 font-medium">{label}</p>
       <div className="space-y-2 mb-3">
-        {payload.map((p: any) => (
+        {payload.map((p) => (
           <div key={p.name} className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full" style={{ background: p.color }} />
               <span className="text-xs text-zinc-400">{p.name}</span>
             </div>
-            <span className="text-xs font-semibold text-white">${p.value.toLocaleString()}</span>
+            <span className="text-xs font-semibold text-white">
+              ${(p.value ?? 0).toLocaleString()}
+            </span>
           </div>
         ))}
       </div>
-      {(data?.paidInvoices?.length > 0 || data?.outstandingInvoices?.length > 0) && (
+      {(data.paidInvoices.length > 0 || data.outstandingInvoices.length > 0) && (
         <button
           onClick={() => onDrillDown?.(data)}
           className="w-full text-xs py-1.5 rounded-lg bg-[#bfff3a]/10 text-[#bfff3a] border border-[#bfff3a]/20 hover:bg-[#bfff3a]/20 transition-colors"
