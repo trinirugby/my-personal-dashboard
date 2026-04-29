@@ -215,7 +215,7 @@ export function RevenueChart({ invoices, expenses }: Props) {
   const totalNet = data.reduce((s, d) => s + d.netProfit, 0);
 
   return (
-    <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6">
+    <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6 hover:-translate-y-0.5 hover:shadow-lg transition-transform">
       <div className="flex items-start justify-between mb-6">
         <div className="flex flex-wrap gap-4 md:gap-8">
           <div>

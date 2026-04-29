@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import { createInvoiceAction, createExpenseAction, createProjectAction } from "@/app/actions";
 
 type Modal = "invoice" | "expense" | "project" | null;
@@ -76,16 +77,21 @@ function InvoiceModal({ onClose }: { onClose: () => void }) {
     const fd = new FormData(e.currentTarget);
     const amount = fd.get("amount") as string;
     start(async () => {
-      await createInvoiceAction({
-        "Invoice Number": (fd.get("invoiceNumber") as string) || undefined,
-        Amount: amount ? parseFloat(amount) : undefined,
-        "Invoice Type": (fd.get("invoiceType") as string) || undefined,
-        Status: (fd.get("status") as string) || "Draft",
-        "Issue Date": (fd.get("issueDate") as string) || undefined,
-        "Due Date": (fd.get("dueDate") as string) || undefined,
-        Notes: (fd.get("notes") as string) || undefined,
-      });
-      onClose();
+      try {
+        await createInvoiceAction({
+          "Invoice Number": (fd.get("invoiceNumber") as string) || undefined,
+          Amount: amount ? parseFloat(amount) : undefined,
+          "Invoice Type": (fd.get("invoiceType") as string) || undefined,
+          Status: (fd.get("status") as string) || "Draft",
+          "Issue Date": (fd.get("issueDate") as string) || undefined,
+          "Due Date": (fd.get("dueDate") as string) || undefined,
+          Notes: (fd.get("notes") as string) || undefined,
+        });
+        toast.success("Invoice created");
+        onClose();
+      } catch {
+        toast.error("Failed to create invoice");
+      }
     });
   }
 
@@ -147,15 +153,20 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
     const fd = new FormData(e.currentTarget);
     const amount = fd.get("amount") as string;
     start(async () => {
-      await createExpenseAction({
-        Name: fd.get("name") as string,
-        Category: (fd.get("category") as string) || undefined,
-        Amount: amount ? parseFloat(amount) : undefined,
-        Date: (fd.get("date") as string) || undefined,
-        Recurring: fd.get("recurring") === "on",
-        Notes: (fd.get("notes") as string) || undefined,
-      });
-      onClose();
+      try {
+        await createExpenseAction({
+          Name: fd.get("name") as string,
+          Category: (fd.get("category") as string) || undefined,
+          Amount: amount ? parseFloat(amount) : undefined,
+          Date: (fd.get("date") as string) || undefined,
+          Recurring: fd.get("recurring") === "on",
+          Notes: (fd.get("notes") as string) || undefined,
+        });
+        toast.success("Expense created");
+        onClose();
+      } catch {
+        toast.error("Failed to create expense");
+      }
     });
   }
 
@@ -208,15 +219,22 @@ function ProjectModal({ onClose }: { onClose: () => void }) {
     const fd = new FormData(e.currentTarget);
     const totalValue = fd.get("totalValue") as string;
     start(async () => {
-      await createProjectAction({
-        Name: fd.get("name") as string,
-        Status: (fd.get("status") as string) || "Lead",
-        "Payment Structure": (fd.get("paymentStructure") as string) || undefined,
-        "Total Value": totalValue ? parseFloat(totalValue) : undefined,
-        "Start Date": (fd.get("startDate") as string) || undefined,
-        Notes: (fd.get("notes") as string) || undefined,
-      });
-      onClose();
+      try {
+        await createProjectAction({
+          Name: fd.get("name") as string,
+          Status: (fd.get("status") as string) || "Lead",
+          "Payment Structure": (fd.get("paymentStructure") as string) || undefined,
+          "Total Value": totalValue ? parseFloat(totalValue) : undefined,
+          "Start Date": (fd.get("startDate") as string) || undefined,
+          Notes: (fd.get("notes") as string) || undefined,
+          Owner: (fd.get("owner") as string) || undefined,
+          "Service Type": (fd.get("serviceType") as string) || undefined,
+        });
+        toast.success("Project created");
+        onClose();
+      } catch {
+        toast.error("Failed to create project");
+      }
     });
   }
 
@@ -252,6 +270,24 @@ function ProjectModal({ onClose }: { onClose: () => void }) {
           </Field>
           <Field label="Start Date">
             <input name="startDate" type="date" defaultValue={today} className={inputCls} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Owner">
+            <select name="owner" className={selectCls} defaultValue="">
+              <option value="">—</option>
+              <option value="M">M</option>
+              <option value="Partner">Partner</option>
+              <option value="Both">Both</option>
+            </select>
+          </Field>
+          <Field label="Service Type">
+            <select name="serviceType" className={selectCls} defaultValue="">
+              <option value="">—</option>
+              <option value="Web Dev">Web Dev</option>
+              <option value="AI Automation">AI Automation</option>
+              <option value="Hybrid">Hybrid</option>
+            </select>
           </Field>
         </div>
         <Field label="Notes">

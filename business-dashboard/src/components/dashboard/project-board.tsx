@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -12,8 +12,30 @@ import {
 } from "@dnd-kit/core";
 import { useDroppable } from "@dnd-kit/core";
 import { useDraggable } from "@dnd-kit/core";
+import { toast } from "sonner";
 import { updateProjectStatus, updateProjectAction } from "@/app/actions";
 import type { Project } from "@/lib/airtable";
+
+const OWNER_COLORS: Record<string, string> = {
+  M: "#bfff3a",
+  P: "#3affd1",
+  MP: "#c44dff",
+};
+
+function ownerInitials(owner: string | undefined): string | null {
+  if (!owner) return null;
+  const trimmed = owner.trim();
+  if (!trimmed) return null;
+  if (/^both$/i.test(trimmed)) return "MP";
+  const words = trimmed.split(/[\s&/+,]+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return words[0].slice(0, 2).toUpperCase();
+}
+
+function ownerColor(initials: string | null): string {
+  if (!initials) return "#3a3f47";
+  return OWNER_COLORS[initials] ?? "#fbbf24";
+}
 
 const inputCls = "w-full bg-[#0b0d10] border border-[#2a2e34] rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors";
 const selectCls = inputCls + " cursor-pointer";
@@ -47,6 +69,10 @@ const PAYMENT_COLORS: Record<string, string> = {
 };
 
 function ProjectCard({ project, isDragging = false, onClick }: { project: Project; isDragging?: boolean; onClick?: () => void }) {
+  const initials = ownerInitials(project.Owner);
+  const ownerCol = ownerColor(initials);
+  const serviceType = project["Service Type"];
+
   return (
     <div
       onClick={onClick}
@@ -54,8 +80,24 @@ function ProjectCard({ project, isDragging = false, onClick }: { project: Projec
         isDragging ? "opacity-50" : "hover:border-zinc-600 transition-colors"
       } ${onClick ? "cursor-pointer" : ""}`}
     >
-      <p className="text-sm font-medium text-white mb-2 leading-tight">{project.Name}</p>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <p className="text-sm font-medium text-white leading-tight flex-1">{project.Name}</p>
+        {initials && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-full font-bold tabular-nums shrink-0"
+            style={{ background: `${ownerCol}1f`, color: ownerCol }}
+            title={`Owner: ${project.Owner}`}
+          >
+            {initials}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-2 flex-wrap">
+        {serviceType && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-white/[0.04] text-zinc-300">
+            {serviceType}
+          </span>
+        )}
         {project["Payment Structure"] && (
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${PAYMENT_COLORS[project["Payment Structure"]] ?? "bg-zinc-700 text-zinc-300"}`}>
             {PAYMENT_LABELS[project["Payment Structure"]] ?? project["Payment Structure"].replace(/_/g, " ")}
@@ -106,10 +148,14 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
           "Start Date": (fd.get("startDate") as string) || undefined,
           "End Date": (fd.get("endDate") as string) || undefined,
           Notes: (fd.get("notes") as string) || undefined,
+          Owner: (fd.get("owner") as string) || undefined,
+          "Service Type": (fd.get("serviceType") as string) || undefined,
         });
+        toast.success("Project saved");
         onClose();
       } catch {
         setError(true);
+        toast.error("Failed to save project");
       }
     });
   }
@@ -166,6 +212,26 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400">Owner</label>
+                <select name="owner" defaultValue={project.Owner ?? ""} className={selectCls}>
+                  <option value="">—</option>
+                  <option value="M">M</option>
+                  <option value="Partner">Partner</option>
+                  <option value="Both">Both</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400">Service Type</label>
+                <select name="serviceType" defaultValue={project["Service Type"] ?? ""} className={selectCls}>
+                  <option value="">—</option>
+                  <option value="Web Dev">Web Dev</option>
+                  <option value="AI Automation">AI Automation</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-zinc-400">Start Date</label>
                 <input name="startDate" type="date" defaultValue={project["Start Date"] ?? ""} className={inputCls} />
               </div>
@@ -195,6 +261,18 @@ function ProjectDetailModal({ project, onClose }: { project: Project; onClose: (
               <span className={`text-xs font-medium ${style.header}`}>{project.Status}</span>
             </div>
             <div className="space-y-2 text-xs">
+              {project.Owner && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Owner</span>
+                  <span className="text-zinc-300">{project.Owner}</span>
+                </div>
+              )}
+              {project["Service Type"] && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Service type</span>
+                  <span className="text-zinc-300">{project["Service Type"]}</span>
+                </div>
+              )}
               {project["Payment Structure"] && (
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Payment</span>
@@ -285,10 +363,13 @@ function Column({ status, projects, onDetail }: { status: Status; projects: Proj
   );
 }
 
+type OwnerFilter = "All" | string;
+
 export function ProjectBoard({ projects }: Props) {
   const [localProjects, setLocalProjects] = useState(projects);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detailProject, setDetailProject] = useState<Project | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("All");
   const [, startTransition] = useTransition();
 
   useEffect(() => { setLocalProjects(projects); }, [projects]);
@@ -297,7 +378,17 @@ export function ProjectBoard({ projects }: Props) {
 
   const activeProject = localProjects.find((p) => p.id === activeId);
 
-  const visible = localProjects.filter((p) => p.Status !== "Cancelled");
+  const ownerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of localProjects) {
+      if (p.Owner) set.add(p.Owner);
+    }
+    return Array.from(set).sort();
+  }, [localProjects]);
+
+  const visible = localProjects
+    .filter((p) => p.Status !== "Cancelled")
+    .filter((p) => ownerFilter === "All" ? true : p.Owner === ownerFilter);
 
   function handleDragStart({ active }: DragStartEvent) {
     setActiveId(active.id as string);
@@ -319,15 +410,38 @@ export function ProjectBoard({ projects }: Props) {
     startTransition(async () => {
       try {
         await updateProjectStatus(active.id as string, typedStatus);
+        toast.success(`Moved to ${typedStatus}`);
       } catch {
         setLocalProjects(prevProjects);
+        toast.error("Failed to move project");
       }
     });
   }
 
   return (
-    <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-5">Projects</p>
+    <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6 hover:-translate-y-0.5 hover:shadow-lg transition-transform">
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <p className="text-xs text-zinc-500 uppercase tracking-wider">Projects</p>
+        {ownerOptions.length > 0 && (
+          <div className="flex gap-1 bg-[#0b0d10] rounded-xl p-1">
+            {(["All", ...ownerOptions] as OwnerFilter[]).map((f) => {
+              const initials = f === "All" ? "All" : ownerInitials(f);
+              return (
+                <button
+                  key={f}
+                  onClick={() => setOwnerFilter(f)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors ${
+                    ownerFilter === f ? "bg-[#bfff3a] text-black" : "text-zinc-400 hover:text-white"
+                  }`}
+                  title={f === "All" ? "All owners" : `Owner: ${f}`}
+                >
+                  {initials}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="overflow-x-auto pb-2">
         <div className="flex gap-4 min-w-max md:min-w-0">

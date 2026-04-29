@@ -128,3 +128,24 @@
     @apply font-sans;
   }
 }
+
+@keyframes dashboard-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboard-fade-in {
+  animation: dashboard-fade-up 360ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-fade-in {
+    animation: none;
+  }
+}

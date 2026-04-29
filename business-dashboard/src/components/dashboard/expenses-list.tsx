@@ -2,10 +2,15 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { format, parseISO } from "date-fns";
+import { toast } from "sonner";
 import { updateExpenseAction } from "@/app/actions";
 import type { Expense } from "@/lib/airtable";
 
-type Props = { expenses: Expense[] };
+type Props = {
+  expenses: Expense[];
+  categoryFilter?: string | null;
+  onClearCategoryFilter?: () => void;
+};
 
 const CATEGORY_COLORS: Record<string, string> = {
   Software: "#ff4d8b",
@@ -44,9 +49,11 @@ function EditModal({ expense, onClose }: { expense: Expense; onClose: () => void
           Recurring: fd.get("recurring") === "on",
           Notes: (fd.get("notes") as string) || undefined,
         });
+        toast.success("Expense saved");
         onClose();
       } catch {
         setError(true);
+        toast.error("Failed to save expense");
       }
     });
   }
@@ -114,10 +121,14 @@ function EditModal({ expense, onClose }: { expense: Expense; onClose: () => void
   );
 }
 
-export function ExpensesList({ expenses }: Props) {
+export function ExpensesList({ expenses, categoryFilter, onClearCategoryFilter }: Props) {
   const [editing, setEditing] = useState<Expense | null>(null);
 
-  const sorted = [...expenses].sort((a, b) => {
+  const filtered = categoryFilter
+    ? expenses.filter((e) => (e.Category ?? "Other") === categoryFilter)
+    : expenses;
+
+  const sorted = [...filtered].sort((a, b) => {
     const da = a.Date ?? "";
     const db = b.Date ?? "";
     return db.localeCompare(da);
@@ -126,9 +137,23 @@ export function ExpensesList({ expenses }: Props) {
   const total = sorted.reduce((s, e) => s + (e.Amount ?? 0), 0);
 
   return (
-    <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6">
-      <div className="flex items-center justify-between mb-5">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider">Expenses</p>
+    <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-6 hover:-translate-y-0.5 hover:shadow-lg transition-transform">
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-xs text-zinc-500 uppercase tracking-wider">Expenses</p>
+          {categoryFilter && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff4d8b]/10 text-[#ff4d8b] border border-[#ff4d8b]/20 font-medium flex items-center gap-1.5">
+              {categoryFilter}
+              <button
+                onClick={onClearCategoryFilter}
+                className="hover:text-white transition-colors"
+                aria-label="Clear category filter"
+              >
+                ✕
+              </button>
+            </span>
+          )}
+        </div>
         <span className="text-xs text-[#ff4d8b] font-semibold">${total.toLocaleString()} total</span>
       </div>
 

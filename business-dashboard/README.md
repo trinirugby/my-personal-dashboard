@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MindeloAI Dashboard
+
+Operational dashboard for **MindeloAI** — a Web Dev + AI Automation studio. Tracks clients, projects, invoices, expenses, recurring revenue, owner attribution, and service-type mix.
+
+**Stack:** Next.js 16 (App Router) · Airtable · Railway · Tailwind · Recharts · @dnd-kit · sonner · react-pdf · Resend · Clerk
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) — root redirects to `/dashboard`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Required env vars (see `.env.local.example`):
 
-## Learn More
+- `AIRTABLE_API_KEY`
+- `AIRTABLE_BASE_ID`
+- `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `RESEND_API_KEY`
 
-To learn more about Next.js, take a look at the following resources:
+## Airtable schema
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Tables: `Clients`, `Projects`, `Invoices`, `Expenses`, `Milestones`. See `dashboard-master-plan.md` in the parent directory for full field definitions.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Optional fields the dashboard reads if present (no breakage if missing):
 
-## Deploy on Vercel
+- `Projects.Owner` · `Projects.Service Type`
+- `Clients.Owner`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deploy
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Hosted on Railway with auto-deploy from `main` (config: `railway.toml`). Push to deploy.

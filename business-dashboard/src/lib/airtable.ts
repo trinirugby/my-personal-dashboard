@@ -16,6 +16,7 @@ export const ClientSchema = z.object({
   Status: z.enum(["Active", "Inactive", "Lead"]).optional(),
   Notes: z.string().optional(),
   Created: z.string().optional(),
+  Owner: z.string().optional(),
 });
 export type Client = z.infer<typeof ClientSchema>;
 
@@ -44,6 +45,8 @@ export const ProjectSchema = z.object({
   "Paid To Date": z.number().optional(),
   "Balance Remaining": z.number().optional(),
   Notes: z.string().optional(),
+  Owner: z.string().optional(),
+  "Service Type": z.string().optional(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

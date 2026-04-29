@@ -49,6 +49,8 @@ export async function createProjectAction(data: {
   "Total Value"?: number;
   "Start Date"?: string;
   Notes?: string;
+  Owner?: string;
+  "Service Type"?: string;
 }) {
   await createProject(data);
   revalidatePath("/dashboard");
@@ -88,6 +90,8 @@ export async function updateProjectAction(id: string, data: {
   "Start Date"?: string;
   "End Date"?: string;
   Notes?: string;
+  Owner?: string;
+  "Service Type"?: string;
 }) {
   await updateProject(id, data);
   revalidatePath("/dashboard");

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { format, startOfMonth, endOfMonth, parseISO, isBefore, isAfter, startOfYear, subMonths } from "date-fns";
+import { useCountUp } from "@/hooks/use-count-up";
 import type { Invoice, Expense } from "@/lib/airtable";
 
 const YTD_GOAL = 55000;
@@ -95,17 +96,23 @@ export function HeroCards({ invoices, expenses }: Props) {
   const ytdPct = Math.min(100, Math.round((stats.ytdRevenue / YTD_GOAL) * 100));
   const monthName = format(now, "MMMM");
 
+  const animatedNet = useCountUp(stats.netThis);
+  const animatedComingIn = useCountUp(
+    stats.outstanding.reduce((s, i) => s + (i.Amount ?? 0), 0)
+  );
+  const animatedYtd = useCountUp(stats.ytdRevenue);
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       {/* Net Profit */}
-      <div className="bg-gradient-to-b from-[#14181d] to-[#0f1215] border border-[#2a2e34] rounded-[20px] p-6">
+      <div className="bg-gradient-to-b from-[#14181d] to-[#0f1215] border border-[#2a2e34] rounded-[20px] p-6 hover:-translate-y-0.5 hover:shadow-lg transition-transform">
         <div className="flex justify-between items-start">
           <div>
             <p className="text-[10px] text-[#bfff3a] font-medium tracking-wider uppercase">
               Net Profit · {monthName}
             </p>
-            <p className={`text-4xl font-bold tracking-tight mt-1.5 ${stats.netThis < 0 ? "text-[#ff4d8b]" : "text-white"}`}>
-              ${stats.netThis.toLocaleString()}
+            <p className={`text-4xl font-bold tracking-tight mt-1.5 tabular-nums ${stats.netThis < 0 ? "text-[#ff4d8b]" : "text-white"}`}>
+              ${Math.round(animatedNet).toLocaleString()}
             </p>
             <p className="text-xs text-zinc-500 mt-1">
               ${stats.revThis.toLocaleString()} revenue − ${stats.expThis.toLocaleString()} expenses
@@ -124,10 +131,10 @@ export function HeroCards({ invoices, expenses }: Props) {
       </div>
 
       {/* Coming In */}
-      <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-5">
+      <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-5 hover:-translate-y-0.5 hover:shadow-lg transition-transform">
         <p className="text-[10px] text-zinc-500 font-medium tracking-wider uppercase">Coming In</p>
-        <p className="text-2xl font-bold mt-1" style={{ color: "#fbbf24" }}>
-          ${stats.outstanding.reduce((s, i) => s + (i.Amount ?? 0), 0).toLocaleString()}
+        <p className="text-2xl font-bold mt-1 tabular-nums" style={{ color: "#fbbf24" }}>
+          ${Math.round(animatedComingIn).toLocaleString()}
         </p>
         <div className="mt-3 space-y-1.5">
           {stats.overdue.length > 0 && (
@@ -149,9 +156,9 @@ export function HeroCards({ invoices, expenses }: Props) {
       </div>
 
       {/* YTD Goal */}
-      <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-5">
+      <div className="bg-[#14181d] border border-[#2a2e34] rounded-[20px] p-5 hover:-translate-y-0.5 hover:shadow-lg transition-transform">
         <p className="text-[10px] text-zinc-500 font-medium tracking-wider uppercase">YTD Goal</p>
-        <p className="text-2xl font-bold text-white mt-1">${stats.ytdRevenue.toLocaleString()}</p>
+        <p className="text-2xl font-bold text-white mt-1 tabular-nums">${Math.round(animatedYtd).toLocaleString()}</p>
         <div className="mt-3 h-1.5 bg-[#1f242a] rounded-full overflow-hidden">
           <div
             className="h-full bg-[#bfff3a] rounded-full transition-all"
