@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useOptimistic, useState, useTransition, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
-import { updateExpenseAction } from "@/app/actions";
+import { deleteExpenseAction, updateExpenseAction } from "@/app/actions";
 import type { Expense } from "@/lib/airtable";
 
 type Props = {
@@ -132,10 +132,28 @@ function EditModal({ expense, onClose }: { expense: Expense; onClose: () => void
 
 export function ExpensesList({ expenses, categoryFilter, onClearCategoryFilter }: Props) {
   const [editing, setEditing] = useState<Expense | null>(null);
+  const [, startTransition] = useTransition();
+  const [optimisticExpenses, removeOptimistic] = useOptimistic<Expense[], string>(
+    expenses,
+    (current, deletedId) => current.filter((e) => e.id !== deletedId),
+  );
+
+  function handleDelete(exp: Expense) {
+    if (!window.confirm(`Delete "${exp.Name}"? This cannot be undone.`)) return;
+    startTransition(async () => {
+      removeOptimistic(exp.id);
+      try {
+        await deleteExpenseAction(exp.id);
+        toast.success("Expense deleted");
+      } catch {
+        toast.error("Failed to delete expense");
+      }
+    });
+  }
 
   const filtered = categoryFilter
-    ? expenses.filter((e) => (e.Category ?? "Other") === categoryFilter)
-    : expenses;
+    ? optimisticExpenses.filter((e) => (e.Category ?? "Other") === categoryFilter)
+    : optimisticExpenses;
 
   const sorted = [...filtered].sort((a, b) => {
     const da = a.Date ?? "";
@@ -206,12 +224,20 @@ export function ExpensesList({ expenses, categoryFilter, onClearCategoryFilter }
                       {exp.Date ? format(parseISO(exp.Date), "MMM d, yyyy") : "—"}
                     </td>
                     <td className="py-3 text-right">
-                      <button
-                        onClick={() => setEditing(exp)}
-                        className="text-xs px-2.5 py-1 rounded-lg bg-white/0 text-zinc-600 border border-transparent hover:bg-white/[0.04] hover:text-zinc-300 hover:border-[#2a2e34] opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={() => setEditing(exp)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-white/0 text-zinc-600 border border-transparent hover:bg-white/[0.04] hover:text-zinc-300 hover:border-[#2a2e34] opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(exp)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-white/0 text-zinc-600 border border-transparent hover:bg-[#ff4d8b]/10 hover:text-[#ff4d8b] hover:border-[#ff4d8b]/30 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

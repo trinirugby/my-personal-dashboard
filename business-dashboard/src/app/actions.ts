@@ -9,6 +9,8 @@ import {
   createInvoice,
   createExpense,
   createProject,
+  deleteProject,
+  deleteExpense,
   type InvoiceWrite,
   type ProjectWrite,
   type ExpenseWrite,
@@ -57,5 +59,15 @@ export async function updateInvoiceAction(id: string, data: InvoiceWrite) {
 
 export async function updateProjectAction(id: string, data: ProjectWrite) {
   await updateProject(id, data);
+  revalidatePath("/dashboard");
+}
+
+export async function deleteProjectAction(id: string) {
+  await deleteProject(id);
+  revalidatePath("/dashboard");
+}
+
+export async function deleteExpenseAction(id: string) {
+  await deleteExpense(id);
   revalidatePath("/dashboard");
 }

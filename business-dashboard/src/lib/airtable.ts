@@ -282,6 +282,11 @@ async function updateRecord<TInput>(
   return { id: record.id, fields: record.fields as Record<string, unknown> };
 }
 
+async function deleteRecord(table: string, id: string): Promise<{ id: string }> {
+  const record = await getBase()(table).destroy(id);
+  return { id: record.id };
+}
+
 // ─── Writes ───────────────────────────────────────────────────────────────────
 
 export const createClient = (payload: ClientWrite) =>
@@ -304,3 +309,7 @@ export const updateProject = (id: string, payload: ProjectWrite) =>
 
 export const updateExpense = (id: string, payload: ExpenseWrite) =>
   updateRecord("Expenses", ExpenseWriteSchema, id, payload);
+
+export const deleteProject = (id: string) => deleteRecord("Projects", id);
+
+export const deleteExpense = (id: string) => deleteRecord("Expenses", id);

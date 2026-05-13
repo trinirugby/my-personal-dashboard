@@ -13,8 +13,35 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { toast } from "sonner";
-import { updateProjectAction, updateProjectStatus } from "@/app/actions";
+import {
+  deleteProjectAction,
+  updateProjectAction,
+  updateProjectStatus,
+} from "@/app/actions";
 import type { Client, Project } from "@/lib/airtable";
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
 
 const OWNER_COLORS: Record<string, string> = {
   M: "#bfff3a",
@@ -81,10 +108,12 @@ function ProjectCard({
   project,
   isDragging = false,
   onClick,
+  onDelete,
 }: {
   project: Project;
   isDragging?: boolean;
   onClick?: () => void;
+  onDelete?: () => void;
 }) {
   const initials = ownerInitials(project.Owner);
   const ownerCol = ownerColor(initials);
@@ -93,21 +122,38 @@ function ProjectCard({
   return (
     <div
       onClick={onClick}
-      className={`bg-[#0b0d10] border border-[#2a2e34] rounded-2xl p-4 select-none ${
+      className={`group bg-[#0b0d10] border border-[#2a2e34] rounded-2xl p-4 select-none ${
         isDragging ? "opacity-50" : "hover:border-zinc-600 transition-colors"
       } ${onClick ? "cursor-pointer" : ""}`}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-medium text-white leading-tight flex-1">{project.Name}</p>
-        {initials && (
-          <span
-            className="text-[10px] px-1.5 py-0.5 rounded-full font-bold tabular-nums shrink-0"
-            style={{ background: `${ownerCol}1f`, color: ownerCol }}
-            title={`Owner: ${project.Owner}`}
-          >
-            {initials}
-          </span>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {onDelete && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-1 rounded-md text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-[#ff4d8b] hover:bg-[#ff4d8b]/10 transition-all"
+              aria-label="Delete project"
+              title="Delete project"
+            >
+              <TrashIcon />
+            </button>
+          )}
+          {initials && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full font-bold tabular-nums"
+              style={{ background: `${ownerCol}1f`, color: ownerCol }}
+              title={`Owner: ${project.Owner}`}
+            >
+              {initials}
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         {serviceType && (
@@ -501,7 +547,15 @@ function ProjectDetailModal({
   );
 }
 
-function DraggableCard({ project, onDetail }: { project: Project; onDetail: () => void }) {
+function DraggableCard({
+  project,
+  onDetail,
+  onDelete,
+}: {
+  project: Project;
+  onDetail: () => void;
+  onDelete: () => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: project.id });
   return (
     <div
@@ -514,6 +568,7 @@ function DraggableCard({ project, onDetail }: { project: Project; onDetail: () =
         project={project}
         isDragging={isDragging}
         onClick={isDragging ? undefined : onDetail}
+        onDelete={onDelete}
       />
     </div>
   );
@@ -523,10 +578,12 @@ function Column({
   status,
   projects,
   onDetail,
+  onDelete,
 }: {
   status: Status;
   projects: Project[];
   onDetail: (p: Project) => void;
+  onDelete: (p: Project) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const style = COLUMN_STYLES[status];
@@ -547,7 +604,12 @@ function Column({
         }`}
       >
         {projects.map((p) => (
-          <DraggableCard key={p.id} project={p} onDetail={() => onDetail(p)} />
+          <DraggableCard
+            key={p.id}
+            project={p}
+            onDetail={() => onDetail(p)}
+            onDelete={() => onDelete(p)}
+          />
         ))}
       </div>
     </div>
@@ -556,7 +618,9 @@ function Column({
 
 type OwnerFilter = "All" | string;
 
-type OptimisticAction = { id: string; status: Status };
+type OptimisticAction =
+  | { kind: "status"; id: string; status: Status }
+  | { kind: "delete"; id: string };
 
 export function ProjectBoard({ projects, clients = [] }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -568,8 +632,10 @@ export function ProjectBoard({ projects, clients = [] }: Props) {
   // automatically; no setState-in-effect mirror needed.
   const [optimisticProjects, applyOptimistic] = useOptimistic<Project[], OptimisticAction>(
     projects,
-    (current, action) =>
-      current.map((p) => (p.id === action.id ? { ...p, Status: action.status } : p)),
+    (current, action) => {
+      if (action.kind === "delete") return current.filter((p) => p.id !== action.id);
+      return current.map((p) => (p.id === action.id ? { ...p, Status: action.status } : p));
+    },
   );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -602,7 +668,7 @@ export function ProjectBoard({ projects, clients = [] }: Props) {
     if (!project || project.Status === typedStatus) return;
 
     startTransition(async () => {
-      applyOptimistic({ id: active.id as string, status: typedStatus });
+      applyOptimistic({ kind: "status", id: active.id as string, status: typedStatus });
       try {
         await updateProjectStatus(active.id as string, typedStatus);
         toast.success(`Moved to ${typedStatus}`);
@@ -610,6 +676,19 @@ export function ProjectBoard({ projects, clients = [] }: Props) {
         // The transition tears down on throw; the next server render will replace
         // the optimistic state with whatever is now in Airtable.
         toast.error("Failed to move project");
+      }
+    });
+  }
+
+  function handleDelete(project: Project) {
+    if (!window.confirm(`Delete "${project.Name}"? This cannot be undone.`)) return;
+    startTransition(async () => {
+      applyOptimistic({ kind: "delete", id: project.id });
+      try {
+        await deleteProjectAction(project.id);
+        toast.success("Project deleted");
+      } catch {
+        toast.error("Failed to delete project");
       }
     });
   }
@@ -647,6 +726,7 @@ export function ProjectBoard({ projects, clients = [] }: Props) {
                 status={status}
                 projects={visible.filter((p) => p.Status === status)}
                 onDetail={setDetailProject}
+                onDelete={handleDelete}
               />
             ))}
           </div>
